@@ -1,0 +1,21 @@
+name: "nakama-node-1"
+database:
+  address: ["root@cockroachdb:26257"]
+rpc:
+  port: 7350
+console:
+  port: 7351
+  username: "admin"
+  password: "password"
+session:
+  encryption_key: "default-encryption-key"
+  token_expiry_sec: 7200
+  refresh_encryption_key: "default-refresh-encryption-key"
+  refresh_token_expiry_sec: 14400
+logger:
+  level: "DEBUG"
+  stdout: true
+runtime:
+  env:
+    - "DEBUG=true"
+  js_entrypoint: "main.js"
