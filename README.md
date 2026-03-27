@@ -1,41 +1,92 @@
-# Nakama Tic-Tac-Toe Project
+# XO Arena
 
-This project is a multiplayer Tic-Tac-Toe game built using **Nakama** as the game server and **React** for the user interface.
+Multiplayer XO (tic-tac-toe) with a server-authoritative Nakama backend and a modern React frontend.
+
+## Highlights
+- Authoritative 1v1 match flow (all moves validated on server)
+- 30-second turn timer with automatic turn skip
+- Persistent head-to-head score between two players
+- Persistent play history per player
+- Profile update support (username/display name)
+- In-match rematch flow (play as many rounds as you want)
 
 ## Tech Stack
-- **Game Server:** Nakama (running in Docker)
-- **Server Language:** TypeScript (compiled to JavaScript)
-- **Frontend Framework:** React (using Vite)
-- **API Client:** @heroiclabs/nakama-js
+- Backend runtime: Nakama JavaScript runtime (TypeScript source)
+- Frontend: React + Vite + TypeScript
+- Database: CockroachDB (via Docker)
+- Realtime/API client: `@heroiclabs/nakama-js`
 
 ## Project Structure
-- `/backend`: Contains the server-authoritative logic.
-- `/frontend`: Contains the React application.
-- `/data`: Configuration for the Nakama server.
-- `docker-compose.yml`: Used to start Nakama and the database.
-
-## How to Get Started
-
-### 1. Requirements
-- Node.js & npm
-- Docker & Docker Compose (Wait, Docker is not yet available in this environment? I will check!)
-
-### 2. Building the Backend
-1. Go to the `backend` folder.
-2. Run `npm install` and then `npm run build`.
-3. This creates a `build/main.js` file which Nakama will use.
-
-### 3. Running the Server 
-Currently, we are setting up the Docker environment. Once ready, you will run:
-```bash
-docker-compose up
+```text
+backend/      # Nakama runtime code (TypeScript -> build/main.js)
+frontend/     # React application
+data/         # Nakama local config and runtime mount
+docker-compose.yml
 ```
-This will start Nakama at `http://localhost:7350` and the Console at `http://localhost:7351`.
 
-### 4. Running the Frontend
-1. Go to the `frontend` folder.
-2. Run `npm install` and then `npm run dev`.
-3. Open the URL shown in the terminal.
+## Prerequisites
+- Node.js 18+
+- npm
+- Docker Desktop (or Docker Engine + Compose)
 
-## Game Logic (Server-Authoritative)
-All moves are validated on the server. If a player tries to move out of turn or in a filled spot, the server rejects it. The server also detects the winner and broadcasts the final state to both players.
+## Quick Start
+
+### 1. Install dependencies
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+### 2. Build backend runtime bundle
+```bash
+cd backend
+npm run build
+```
+
+### 3. Start infrastructure
+```bash
+cd ..
+docker compose up -d
+```
+
+### 4. Start frontend
+```bash
+cd frontend
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Open:
+- App: `http://localhost:5173`
+- Nakama API: `http://localhost:7350`
+- Nakama Console: `http://localhost:7351` (default `admin` / `password`)
+
+## Development Workflow
+
+### Rebuild backend after backend code changes
+```bash
+cd backend
+npm run build
+cd ..
+docker compose restart nakama
+```
+
+### Stop services
+```bash
+docker compose down
+```
+
+## Data Storage Model
+- Account profile: Nakama account user fields (`username`, `display_name`)
+- Match history: Nakama storage collection `ttt_history`, key `recent`
+- Head-to-head score: Nakama storage collection `ttt_h2h`
+
+## Runtime Notes
+- The backend compiles into a single runtime file: `backend/build/main.js`
+- Nakama loads runtime modules from `/nakama/data/modules` (mounted from `backend/build`)
+
+## Troubleshooting
+- If frontend says login failed:
+	- Ensure Nakama is running: `docker compose ps`
+	- Verify API health: `curl -I http://localhost:7350`
+- If Docker start fails for old image tags:
+	- Pull latest images and rerun `docker compose up -d`
