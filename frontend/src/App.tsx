@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Client, Session, Socket } from '@heroiclabs/nakama-js';
 import './index.css';
 
@@ -17,12 +17,19 @@ enum OpCode {
     REMATCH = 4
 }
 
-type Screen = 'home' | 'game';
+type Screen = 'home' | 'settings' | 'matchmaking' | 'game';
+type SettingsTab = 'profile' | 'history';
 
 interface HeadToHead {
     wins: Record<string, number>;
     draws: number;
     totalGames: number;
+}
+
+interface HistoryMove {
+    position: number;
+    mark: 'X' | 'O';
+    playerDisplayName: string;
 }
 
 interface HistoryItem {
@@ -32,6 +39,7 @@ interface HistoryItem {
     opponentId: string;
     opponentDisplayName?: string;
     opponentUsername?: string;
+    moves?: HistoryMove[];
 }
 
 interface AccountState {
@@ -59,17 +67,45 @@ interface GameState {
 function App() {
     const [client] = useState(new Client(SERVER_KEY, HOST, PORT, USE_SSL));
     const [screen, setScreen] = useState<Screen>('home');
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile');
     const [session, setSession] = useState<Session | null>(null);
     const [socket, setSocket] = useState<Socket | null>(null);
     const [matchId, setMatchId] = useState<string | null>(null);
     const [matchTicket, setMatchTicket] = useState<string | null>(null);
     const [gameState, setGameState] = useState<GameState | null>(null);
     const [history, setHistory] = useState<HistoryItem[]>([]);
+    const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
     const [account, setAccount] = useState<AccountState | null>(null);
     const [usernameInput, setUsernameInput] = useState('');
     const [displayNameInput, setDisplayNameInput] = useState('');
     const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState('Welcome to XO Arena');
+    const [queueStartedAt, setQueueStartedAt] = useState<number | null>(null);
+    const [queueElapsedSec, setQueueElapsedSec] = useState(0);
+    const [timerDisplaySec, setTimerDisplaySec] = useState(0);
+    const [toastMessage, setToastMessage] = useState('');
+    const [toastVisible, setToastVisible] = useState(false);
+    const [profileSaved, setProfileSaved] = useState(false);
+    const [isOnboarding, setIsOnboarding] = useState(false);
+    const [historyRefreshing, setHistoryRefreshing] = useState(false);
+    const toastTimeoutRef = useRef<number | null>(null);
+    const timerSyncRef = useRef<{ baseSec: number; syncedAt: number }>({ baseSec: 0, syncedAt: Date.now() });
+
+    const showToast = (message: string, durationMs = 2400) => {
+        setToastMessage(message);
+        setToastVisible(true);
+        if (toastTimeoutRef.current) {
+            window.clearTimeout(toastTimeoutRef.current);
+        }
+        toastTimeoutRef.current = window.setTimeout(() => {
+            setToastVisible(false);
+        }, durationMs);
+    };
+
+    const haptic = () => {
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+            navigator.vibrate(20);
+        }
+    };
 
     const formatAuthError = async (error: unknown): Promise<string> => {
         if (error instanceof Response) {
@@ -126,6 +162,14 @@ function App() {
     const opponentVotedRematch = opponentId ? !!rematchVotes[opponentId] : false;
 
     useEffect(() => {
+        return () => {
+            if (toastTimeoutRef.current) {
+                window.clearTimeout(toastTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
         if (!socket) {
             return;
         }
@@ -134,38 +178,91 @@ function App() {
             const data = JSON.parse(new TextDecoder().decode(result.data));
             if (result.op_code === OpCode.STATE_UPDATE || result.op_code === OpCode.GAME_OVER) {
                 setGameState(data as GameState);
-                if (data.statusMessage) {
-                    setStatus(data.statusMessage);
-                }
                 if (result.op_code === OpCode.GAME_OVER) {
-                    void loadHistory(session);
+                    showToast(data.statusMessage || 'Round finished.', 2600);
+                    void loadHistory(session, false);
                 }
             }
         };
 
         socket.onmatchmakermatched = (matched) => {
-            setStatus('Match found. Joining...');
+            showToast('Match found. Joining...', 1600);
             socket.joinMatch(matched.match_id).then((match) => {
                 setMatchId(match.match_id);
                 setMatchTicket(null);
+                setQueueStartedAt(null);
+                setQueueElapsedSec(0);
                 setScreen('game');
-                setStatus('Match joined. Good luck.');
+                showToast('Match joined.', 1700);
             }).catch(() => {
-                setStatus('Could not join the match. Please retry.');
+                showToast('Could not join the match.', 2200);
             });
         };
     }, [socket, session]);
+
+    useEffect(() => {
+        if (!queueStartedAt || screen !== 'matchmaking') {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setQueueElapsedSec(Math.max(0, Math.floor((Date.now() - queueStartedAt) / 1000)));
+        }, 500);
+
+        return () => clearInterval(interval);
+    }, [queueStartedAt, screen]);
+
+    useEffect(() => {
+        if (!gameState) {
+            setTimerDisplaySec(0);
+            timerSyncRef.current = { baseSec: 0, syncedAt: Date.now() };
+            return;
+        }
+
+        timerSyncRef.current = {
+            baseSec: gameState.turnRemainingSec || 0,
+            syncedAt: Date.now()
+        };
+        setTimerDisplaySec(gameState.turnRemainingSec || 0);
+    }, [gameState?.turnRemainingSec, gameState?.turn, gameState?.winner]);
+
+    useEffect(() => {
+        if (!gameState || gameState.winner || !gameState.turn) {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            const elapsed = (Date.now() - timerSyncRef.current.syncedAt) / 1000;
+            const next = Math.max(0, timerSyncRef.current.baseSec - elapsed);
+            setTimerDisplaySec(next);
+        }, 80);
+
+        return () => clearInterval(interval);
+    }, [gameState?.turn, gameState?.winner, gameState?.turnDurationSec]);
 
     const loadProfile = async (activeSession: Session) => {
         const accountResponse = await client.getAccount(activeSession);
         setAccount(accountResponse);
         setUsernameInput(accountResponse.user?.username || '');
         setDisplayNameInput(accountResponse.user?.display_name || '');
+
+        const missingProfile = !(accountResponse.user?.display_name || '').trim();
+        setIsOnboarding(missingProfile);
+        if (missingProfile) {
+            setProfileSaved(false);
+            setSettingsTab('profile');
+            setScreen('settings');
+            showToast('Set your profile to enter the arena.', 2600);
+        }
     };
 
-    const loadHistory = async (activeSession: Session | null) => {
+    const loadHistory = async (activeSession: Session | null, showFeedback = true) => {
         if (!activeSession) {
             return;
+        }
+
+        if (showFeedback) {
+            setHistoryRefreshing(true);
         }
 
         const response = await client.readStorageObjects(activeSession, {
@@ -179,11 +276,45 @@ function App() {
         const firstObject = response.objects?.[0];
         const value = firstObject?.value as { games?: HistoryItem[] } | undefined;
         setHistory(Array.isArray(value?.games) ? (value?.games || []) : []);
+
+        if (showFeedback) {
+            setHistoryRefreshing(false);
+            haptic();
+            showToast('History refreshed.', 1200);
+        }
+    };
+
+    const clearHistory = async () => {
+        if (!session) {
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await client.writeStorageObjects(session, [{
+                collection: STORAGE_COLLECTION_HISTORY,
+                key: STORAGE_KEY_HISTORY,
+                permission_read: 1,
+                permission_write: 0,
+                value: {
+                    games: [],
+                    updatedAt: Date.now()
+                }
+            }]);
+            setHistory([]);
+            setSelectedHistory(null);
+            showToast('History cleared.', 1500);
+            haptic();
+        } catch (error) {
+            const message = await formatAuthError(error);
+            showToast(`Could not clear history: ${message}`, 2500);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const authenticate = async () => {
         setLoading(true);
-        setStatus('Authenticating...');
         try {
             let deviceId = localStorage.getItem('nakama-device-id');
             if (!deviceId || deviceId.length < 10) {
@@ -199,12 +330,14 @@ function App() {
             setSocket(newSocket);
 
             await loadProfile(newSession);
-            await loadHistory(newSession);
+            await loadHistory(newSession, false);
 
-            setStatus('Connected. Update profile or find a match.');
+            if (!isOnboarding) {
+                showToast('Connected', 2300);
+            }
         } catch (error) {
             const message = await formatAuthError(error);
-            setStatus(`Login failed: ${message}`);
+            showToast(`Login failed: ${message}`, 3000);
         } finally {
             setLoading(false);
         }
@@ -216,17 +349,24 @@ function App() {
         }
 
         setLoading(true);
-        setStatus('Saving profile...');
         try {
             await client.updateAccount(session, {
                 username: usernameInput.trim() || undefined,
                 display_name: displayNameInput.trim() || undefined
             });
             await loadProfile(session);
-            setStatus('Profile updated.');
+            setProfileSaved(true);
+            showToast('Profile updated.', 1800);
+            haptic();
+
+            if (isOnboarding) {
+                setIsOnboarding(false);
+                setScreen('home');
+                showToast('Profile set. Welcome to the arena.', 2200);
+            }
         } catch (error) {
             const message = await formatAuthError(error);
-            setStatus(`Profile update failed: ${message}`);
+            showToast(`Profile update failed: ${message}`, 2600);
         } finally {
             setLoading(false);
         }
@@ -238,13 +378,15 @@ function App() {
         }
 
         setLoading(true);
-        setStatus('Searching for opponent...');
         try {
             const ticket = await socket.addMatchmaker('*', 2, 2);
             setMatchTicket(ticket.ticket);
-            setStatus('Matchmaking active. Waiting for another player...');
+            setQueueStartedAt(Date.now());
+            setQueueElapsedSec(0);
+            setScreen('matchmaking');
+            showToast('Matchmaking started.', 1500);
         } catch {
-            setStatus('Matchmaking failed.');
+            showToast('Matchmaking failed.', 2000);
         } finally {
             setLoading(false);
         }
@@ -258,9 +400,12 @@ function App() {
         try {
             await socket.removeMatchmaker(matchTicket);
             setMatchTicket(null);
-            setStatus('Matchmaking canceled.');
+            setQueueStartedAt(null);
+            setQueueElapsedSec(0);
+            setScreen('home');
+            showToast('Queue canceled.', 1500);
         } catch {
-            setStatus('Unable to cancel matchmaking.');
+            showToast('Unable to cancel queue.', 1800);
         }
     };
 
@@ -275,7 +420,7 @@ function App() {
         try {
             await socket.sendMatchState(matchId, OpCode.MOVE, JSON.stringify({ position }));
         } catch {
-            setStatus('Move could not be sent.');
+            showToast('Move could not be sent.', 1500);
         }
     };
 
@@ -286,9 +431,9 @@ function App() {
 
         try {
             await socket.sendMatchState(matchId, OpCode.REMATCH, JSON.stringify({ rematch: true }));
-            setStatus('Rematch requested. Waiting for opponent...');
+            showToast('Rematch requested.', 1500);
         } catch {
-            setStatus('Could not request rematch.');
+            showToast('Could not request rematch.', 1700);
         }
     };
 
@@ -304,8 +449,19 @@ function App() {
         setMatchId(null);
         setGameState(null);
         setScreen('home');
-        setStatus('Back to home.');
     };
+
+    const openSettings = () => {
+        if (!session) {
+            showToast('Connect first to access settings.', 1800);
+            return;
+        }
+        setSettingsTab('profile');
+        setProfileSaved(false);
+        setScreen('settings');
+    };
+
+    const backToHome = () => setScreen('home');
 
     const formatHistoryDate = (epochMs: number) => {
         const date = new Date(epochMs);
@@ -313,35 +469,130 @@ function App() {
     };
 
     const turnProgress = gameState
-        ? Math.max(0, Math.min(100, (gameState.turnRemainingSec / gameState.turnDurationSec) * 100))
+        ? Math.max(0, Math.min(100, (timerDisplaySec / gameState.turnDurationSec) * 100))
         : 0;
+
+    const buildBoardFromMoves = (moves: HistoryMove[] | undefined) => {
+        const board: (string | null)[] = Array(9).fill(null);
+        if (!moves) {
+            return board;
+        }
+
+        for (let i = 0; i < moves.length; i++) {
+            const move = moves[i];
+            if (move.position >= 0 && move.position <= 8) {
+                board[move.position] = move.mark;
+            }
+        }
+        return board;
+    };
 
     const renderHome = () => (
         <div className="home-layout">
-            <section className="hero-card glass">
-                <div className="hero-badge">Realtime Multiplayer</div>
-                <h1>XO Arena</h1>
-                <p>
-                    Play stylish, server-authoritative XO duels with turn timers, head-to-head rivalry tracking,
-                    instant rematches, and a polished competitive lobby experience.
-                </p>
-                <p className="status-pill">{status}</p>
+            <section className="hero-stage">
+                <div className="hero-top-row">
+                    <div className="hero-badge">XO ARENA</div>
+                    {session && <button className="ghost" onClick={openSettings}>Settings</button>}
+                </div>
+
+                <h1>Play. Outthink. Repeat.</h1>
+
                 <div className="hero-points">
-                    <span>30s Turn Timer</span>
-                    <span>Live Rival Score</span>
-                    <span>Persistent History</span>
+                    <span>1V1 LIVE</span>
+                    <span>30S TURN CLOCK</span>
+                    <span>HEAD TO HEAD</span>
+                </div>
+
+                <div className="home-actions">
+                    {!session ? (
+                        <button onClick={authenticate} disabled={loading}>
+                            {loading ? 'Connecting...' : 'Enter Arena'}
+                        </button>
+                    ) : (
+                        <>
+                            <button onClick={findMatch} disabled={loading || !!matchTicket}>Start Match</button>
+                            {matchTicket && <button className="ghost" onClick={cancelMatchmaking}>Cancel Queue</button>}
+                        </>
+                    )}
                 </div>
             </section>
 
-            <section className="panel-grid">
-                <article className="panel glass">
-                    <h2>Profile</h2>
+            <section className="home-feed">
+                <article className="history-panel">
+                    <div className="feed-head">
+                        <h2>Recent Matches</h2>
+                        {session && <button className="ghost" onClick={() => loadHistory(session)}>{historyRefreshing ? 'Refreshing...' : 'Refresh'}</button>}
+                    </div>
+                    {!session ? (
+                        <p className="muted">Connect to view your match trail.</p>
+                    ) : history.length === 0 ? (
+                        <p className="muted">No matches yet. Queue up and make the first one count.</p>
+                    ) : (
+                        <ul className="history-list">
+                            {history.map((item, index) => (
+                                <li key={`${item.at}-${index}`} onClick={() => setSelectedHistory(item)} className="history-item-clickable">
+                                    <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
+                                    <strong>{item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
+                                    <span className="muted">as {item.yourMark}</span>
+                                    <span className="muted">{formatHistoryDate(item.at)}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </article>
+
+                {selectedHistory && (
+                    <article className="history-detail">
+                        <div className="feed-head">
+                            <h3>Match Detail</h3>
+                            <button className="ghost" onClick={() => setSelectedHistory(null)}>Close</button>
+                        </div>
+                        <p className="muted">vs {selectedHistory.opponentDisplayName || selectedHistory.opponentUsername || 'Opponent'}</p>
+                        <p className="muted">Played as {selectedHistory.yourMark}</p>
+                        <div className="mini-board">
+                            {buildBoardFromMoves(selectedHistory.moves).map((cell, idx) => (
+                                <div key={idx} className={`mini-cell ${cell ? 'filled' : ''}`}>{cell || ''}</div>
+                            ))}
+                        </div>
+                        <ul className="move-list">
+                            {(selectedHistory.moves || []).map((move, idx) => (
+                                <li key={`${move.position}-${idx}`}>#{idx + 1} {move.playerDisplayName} {'->'} {move.mark} on {move.position + 1}</li>
+                            ))}
+                        </ul>
+                    </article>
+                )}
+            </section>
+        </div>
+    );
+
+    const renderSettings = () => (
+        <div className="settings-layout">
+            <section className="settings-header">
+                <button className="ghost" onClick={backToHome}>Back</button>
+                <div>
+                    <h2>Settings</h2>
+                </div>
+            </section>
+
+            <section className="settings-tabs">
+                <button className={settingsTab === 'profile' ? '' : 'ghost'} onClick={() => setSettingsTab('profile')}>Profile</button>
+                <button className={settingsTab === 'history' ? '' : 'ghost'} onClick={() => setSettingsTab('history')}>History</button>
+            </section>
+
+            {settingsTab === 'profile' && (
+                <section className="settings-panel">
                     {!session ? (
                         <div className="stack">
-                            <button onClick={authenticate} disabled={loading}>
-                                {loading ? 'Connecting...' : 'Connect to Server'}
-                            </button>
-                            <p className="muted">Target: {HOST}:{PORT}</p>
+                            <p className="muted">Connect first to edit settings.</p>
+                            <button onClick={authenticate} disabled={loading}>{loading ? 'Connecting...' : 'Connect to Server'}</button>
+                        </div>
+                    ) : profileSaved ? (
+                        <div className="settings-success-row">
+                            <p>Profile updated successfully.</p>
+                            <div className="row">
+                                <button className="ghost" onClick={() => setProfileSaved(false)}>Edit Again</button>
+                                <button onClick={backToHome}>Done</button>
+                            </div>
                         </div>
                     ) : (
                         <div className="stack">
@@ -358,70 +609,59 @@ function App() {
                                 <input
                                     value={displayNameInput}
                                     onChange={(event) => setDisplayNameInput(event.target.value)}
-                                    placeholder="Name shown in profile"
+                                    placeholder="Name shown to opponents"
                                 />
                             </label>
                             <div className="row">
-                                <button onClick={updateProfile} disabled={loading}>Save Profile</button>
-                                <button onClick={findMatch} disabled={loading || !!matchTicket}>Find Match</button>
+                                <button onClick={updateProfile} disabled={loading}>Save Changes</button>
+                                <button className="ghost" onClick={backToHome}>Done</button>
                             </div>
-                            {matchTicket && (
-                                <div className="row">
-                                    <span className="muted">Searching for opponent...</span>
-                                    <button className="secondary" onClick={cancelMatchmaking}>Cancel</button>
-                                </div>
-                            )}
-                            <p className="muted">Active profile: {displayNameInput.trim() || usernameInput.trim() || 'Unnamed player'}</p>
                         </div>
                     )}
-                </article>
+                </section>
+            )}
 
-                <article className="panel glass">
-                    <h2>Play History</h2>
-                    {!session ? (
-                        <p className="muted">Connect to load your history.</p>
-                    ) : history.length === 0 ? (
-                        <p className="muted">No games yet. Play your first match.</p>
-                    ) : (
-                        <ul className="history-list">
-                            {history.map((item, index) => (
-                                <li key={`${item.at}-${index}`}>
-                                    <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
-                                    <strong>vs {item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
-                                    <span className="muted">as {item.yourMark}</span>
-                                    <span className="muted">{formatHistoryDate(item.at)}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </article>
+            {settingsTab === 'history' && (
+                <section className="settings-panel">
+                    <div className="row">
+                        <button className="ghost" onClick={() => loadHistory(session)} disabled={!session || loading}>Refresh</button>
+                        <button onClick={clearHistory} disabled={!session || loading}>Clear History</button>
+                    </div>
+                </section>
+            )}
+        </div>
+    );
 
-                <article className="panel glass tips-panel">
-                    <h2>Quick Start</h2>
-                    <ul className="tips-list">
-                        <li>Set your display name in Profile.</li>
-                        <li>Press Find Match from both players.</li>
-                        <li>Watch your mark (X/O) before opening move.</li>
-                        <li>Both players can click Play Again for endless rounds.</li>
-                    </ul>
-                </article>
+    const renderMatchmaking = () => (
+        <div className="matchmaking-layout">
+            <section className="matchmaking-card">
+                <div className="queue-dot-wrap" aria-hidden="true">
+                    <span className="queue-dot" />
+                    <span className="queue-dot" />
+                    <span className="queue-dot" />
+                </div>
+                <h2>Finding Opponent...</h2>
+                <p className="queue-time">Queue time: <strong>{queueElapsedSec}s</strong></p>
+                <div className="row">
+                    <button className="ghost" onClick={cancelMatchmaking}>Cancel Queue</button>
+                    <button onClick={backToHome}>Home</button>
+                </div>
             </section>
         </div>
     );
 
     const renderGame = () => (
         <div className="game-layout">
-            <header className="game-top glass">
-                <button className="secondary" onClick={goHome}>Home</button>
+            <header className="game-top">
+                <button className="ghost" onClick={goHome}>Home</button>
                 <div>
                     <h2>Round {gameState?.round || 0}</h2>
                     <p className="muted">You ({selfName}) vs {opponentName || 'Waiting for Opponent'}</p>
                 </div>
-                <button className="secondary" onClick={() => loadHistory(session)} disabled={!session}>Refresh History</button>
             </header>
 
             <div className="game-meta">
-                <section className="scoreboard glass">
+                <section className="scoreboard">
                     <div className="score-card">
                         <span>{selfName}</span>
                         <strong>{selfWins}</strong>
@@ -439,10 +679,10 @@ function App() {
                     </div>
                 </section>
 
-                <section className="timer-box glass">
+                <section className="timer-box">
                     <div className="timer-header">
                         <span>{isMyTurn ? `Your turn (${selfName})` : `${opponentName || 'Opponent'} turn`}</span>
-                        <strong>{gameState?.turnRemainingSec || 0}s</strong>
+                        <strong>{Math.max(0, Math.ceil(timerDisplaySec))}s</strong>
                     </div>
                     <div className="mark-line">
                         <span>Your Mark: <strong>{myMark}</strong></span>
@@ -455,21 +695,23 @@ function App() {
                 </section>
             </div>
 
-            <section className="board glass">
-                {gameState?.board.map((cell, index) => (
-                    <button
-                        key={index}
-                        className={`cell ${cell?.toLowerCase() || ''}`}
-                        onClick={() => makeMove(index)}
-                        disabled={!canPlay || !!cell}
-                    >
-                        {cell || ''}
-                    </button>
-                ))}
+            <section className="board-wrap">
+                <div className="board">
+                    {gameState?.board.map((cell, index) => (
+                        <button
+                            key={index}
+                            className={`cell ${cell?.toLowerCase() || ''}`}
+                            onClick={() => makeMove(index)}
+                            disabled={!canPlay || !!cell}
+                        >
+                            {cell || ''}
+                        </button>
+                    ))}
+                </div>
             </section>
 
             {gameState?.winner && (
-                <section className="rematch-box glass">
+                <section className="rematch-box">
                     <p>
                         {gameState.winner === 'draw'
                             ? 'This round ended in a draw.'
@@ -480,7 +722,7 @@ function App() {
                     <p className="muted">Both players click Play Again to continue.</p>
                     <div className="row">
                         <button onClick={requestRematch} disabled={myVotedRematch}>Play Again</button>
-                        <button className="secondary" onClick={goHome}>Home</button>
+                        <button className="ghost" onClick={goHome}>Home</button>
                     </div>
                     <p className="muted">You: {myVotedRematch ? 'Ready' : 'Waiting'} | Opponent: {opponentVotedRematch ? 'Ready' : 'Waiting'}</p>
                 </section>
@@ -493,8 +735,11 @@ function App() {
             <div className="bg-orb orb-a" />
             <div className="bg-orb orb-b" />
             <div className="noise-layer" />
+            {toastVisible && <div className="toast">{toastMessage}</div>}
             <main>
                 {screen === 'home' && renderHome()}
+                {screen === 'settings' && renderSettings()}
+                {screen === 'matchmaking' && renderMatchmaking()}
                 {screen === 'game' && gameState && renderGame()}
             </main>
         </div>
