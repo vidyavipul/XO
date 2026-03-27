@@ -1,27 +1,50 @@
 # XO Arena
 
-Multiplayer XO (tic-tac-toe) with a server-authoritative Nakama backend and a modern React frontend.
+Modern multiplayer XO built with a server-authoritative backend and a responsive React UI.
 
-## Highlights
-- Authoritative 1v1 match flow (all moves validated on server)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Nakama](https://img.shields.io/badge/Nakama-1A1A1A?style=for-the-badge&logo=serverless&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![CockroachDB](https://img.shields.io/badge/CockroachDB-6933FF?style=for-the-badge&logo=cockroachlabs&logoColor=white)
+
+## Why XO Arena
+- Authoritative 1v1 gameplay (all moves validated on server)
 - 30-second turn timer with automatic turn skip
-- Persistent head-to-head score between two players
+- Persistent head-to-head score for player pairs
 - Persistent play history per player
-- Profile update support (username/display name)
-- In-match rematch flow (play as many rounds as you want)
+- Profile support (`username`, `display_name`)
+- Infinite rematch loop inside the same match
 
-## Tech Stack
-- Backend runtime: Nakama JavaScript runtime (TypeScript source)
-- Frontend: React + Vite + TypeScript
-- Database: CockroachDB (via Docker)
-- Realtime/API client: `@heroiclabs/nakama-js`
-
-## Project Structure
+## Architecture
 ```text
-backend/      # Nakama runtime code (TypeScript -> build/main.js)
-frontend/     # React application
-data/         # Nakama local config and runtime mount
-docker-compose.yml
+React (Vite) frontend
+				|
+				| WebSocket + REST via nakama-js
+				v
+Nakama (authoritative match runtime)
+				|
+				v
+CockroachDB (accounts + storage objects)
+```
+
+## Stack
+| Layer | Tech |
+|---|---|
+| Frontend | React, TypeScript, Vite |
+| Backend Runtime | Nakama JavaScript runtime (TypeScript source) |
+| Database | CockroachDB |
+| Local Orchestration | Docker Compose |
+| Realtime/API Client | `@heroiclabs/nakama-js` |
+
+## Repository Layout
+```text
+backend/             # Nakama runtime TypeScript source
+backend/build/       # Compiled runtime bundle (main.js)
+frontend/            # React application
+data/                # Nakama local config and mounted runtime data
+docker-compose.yml   # Local infra (Nakama + CockroachDB)
 ```
 
 ## Prerequisites
@@ -37,13 +60,13 @@ cd backend && npm install
 cd ../frontend && npm install
 ```
 
-### 2. Build backend runtime bundle
+### 2. Build backend runtime
 ```bash
-cd backend
+cd ../backend
 npm run build
 ```
 
-### 3. Start infrastructure
+### 3. Start backend services
 ```bash
 cd ..
 docker compose up -d
@@ -55,14 +78,15 @@ cd frontend
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Open:
+## Local URLs
 - App: `http://localhost:5173`
 - Nakama API: `http://localhost:7350`
-- Nakama Console: `http://localhost:7351` (default `admin` / `password`)
+- Nakama Console: `http://localhost:7351`
+- Console credentials: `admin` / `password` (local only)
 
-## Development Workflow
+## Development Commands
 
-### Rebuild backend after backend code changes
+### Rebuild backend after runtime changes
 ```bash
 cd backend
 npm run build
@@ -70,23 +94,33 @@ cd ..
 docker compose restart nakama
 ```
 
-### Stop services
+### Check service status
+```bash
+docker compose ps
+curl -I http://localhost:7350
+curl -I http://localhost:7351
+```
+
+### Stop everything
 ```bash
 docker compose down
 ```
 
-## Data Storage Model
-- Account profile: Nakama account user fields (`username`, `display_name`)
-- Match history: Nakama storage collection `ttt_history`, key `recent`
-- Head-to-head score: Nakama storage collection `ttt_h2h`
+## Data Model
+- Account Profile: Nakama account user fields (`username`, `display_name`)
+- Match History: Nakama storage collection `ttt_history` with key `recent`
+- Head-to-Head Score: Nakama storage collection `ttt_h2h`
 
 ## Runtime Notes
-- The backend compiles into a single runtime file: `backend/build/main.js`
-- Nakama loads runtime modules from `/nakama/data/modules` (mounted from `backend/build`)
+- Backend is compiled into `backend/build/main.js`
+- `backend/build` is mounted into Nakama modules path at runtime
+- Match logic runs server-side (not client-trusted)
 
 ## Troubleshooting
-- If frontend says login failed:
-	- Ensure Nakama is running: `docker compose ps`
+- Login/auth issues:
+	- Verify Nakama is running: `docker compose ps`
 	- Verify API health: `curl -I http://localhost:7350`
-- If Docker start fails for old image tags:
+- Runtime code changes not visible:
+	- Rebuild backend and restart Nakama
+- Docker image/tag pull issues:
 	- Pull latest images and rerun `docker compose up -d`
