@@ -1,14 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES5",
-    "module": "CommonJS",
+    "module": "none",
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./build",
-    "rootDir": "./src",
+    "outFile": "./build/main.js",
     "lib": ["ESNext", "DOM"]
   },
-  "include": ["src/**/*"]
+  "files": ["src/tic_tac_toe.ts", "src/main.ts"]
 }
