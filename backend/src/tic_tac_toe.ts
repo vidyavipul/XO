@@ -24,6 +24,13 @@ interface State {
     statusMessage: string;
     rematchVotes: { [userID: string]: boolean };
     h2h: HeadToHeadScore;
+    moveLog: MatchMove[];
+}
+
+interface MatchMove {
+    position: number;
+    mark: 'X' | 'O';
+    playerDisplayName: string;
 }
 
 interface HeadToHeadScore {
@@ -38,6 +45,7 @@ interface HistoryItem {
     yourMark: 'X' | 'O';
     opponentId: string;
     opponentDisplayName: string;
+    moves: MatchMove[];
 }
 
 interface HistoryValue {
@@ -72,7 +80,8 @@ const matchInit: nkruntime.MatchInitFunction<State> = (ctx, logger, nk, params) 
                 wins: {},
                 draws: 0,
                 totalGames: 0
-            }
+            },
+            moveLog: []
         },
         tickRate: TICK_RATE,
         label: 'tic-tac-toe'
@@ -215,6 +224,11 @@ const matchLoop: nkruntime.MatchLoopFunction<State> = (ctx, logger, nk, dispatch
         }
 
         state.board[position] = mark;
+        state.moveLog.push({
+            position,
+            mark: mark as 'X' | 'O',
+            playerDisplayName: getUsername(state, userID)
+        });
         const winnerMark = checkWinner(state.board);
 
         if (winnerMark) {
@@ -319,6 +333,7 @@ function startRound(state: State, tick: number, starterUserId: string, message: 
     state.nextTimerBroadcastTick = tick + TICK_RATE;
     state.statusMessage = message;
     state.rematchVotes = {};
+    state.moveLog = [];
 }
 
 function getOpponentId(state: State, userId: string): string | null {
@@ -448,7 +463,8 @@ function persistResult(state: State, nk: nkruntime.Nakama, logger: nkruntime.Log
                 result: state.winner === 'draw' ? 'draw' : (state.winner === userA ? 'win' : 'loss'),
                 yourMark: (state.marks[userA] as 'X' | 'O') || 'X',
                 opponentId: userB,
-                opponentDisplayName: getUsername(state, userB)
+                opponentDisplayName: getUsername(state, userB),
+                moves: state.moveLog
             }
         );
 
@@ -459,7 +475,8 @@ function persistResult(state: State, nk: nkruntime.Nakama, logger: nkruntime.Log
                 result: state.winner === 'draw' ? 'draw' : (state.winner === userB ? 'win' : 'loss'),
                 yourMark: (state.marks[userB] as 'X' | 'O') || 'O',
                 opponentId: userA,
-                opponentDisplayName: getUsername(state, userA)
+                opponentDisplayName: getUsername(state, userA),
+                moves: state.moveLog
             }
         );
 
