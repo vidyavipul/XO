@@ -321,6 +321,39 @@ label {
   border-bottom: 1px solid rgba(145, 191, 229, 0.18);
 }
 
+.history-item-wrap {
+  display: grid;
+  gap: 0.45rem;
+  border-bottom: 1px solid rgba(145, 191, 229, 0.18);
+  padding: 0.4rem 0.1rem 0.6rem;
+}
+
+.history-row-button {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.45rem 0.2rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+}
+
+.history-row-button:hover {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+  background: rgba(135, 189, 229, 0.08);
+}
+
+.history-row-button:active {
+  transform: none;
+}
+
 .history-item-clickable {
   cursor: pointer;
   border-radius: 10px;
@@ -342,6 +375,10 @@ label {
 
 .history-detail h3 {
   margin: 0;
+}
+
+.inline-history-detail {
+  margin-top: 0.1rem;
 }
 
 .mini-board {
@@ -756,6 +793,11 @@ label {
   }
 
   .history-list li {
+    grid-template-columns: unset;
+    gap: 0;
+  }
+
+  .history-row-button {
     grid-template-columns: 1fr;
     gap: 0.2rem;
   }

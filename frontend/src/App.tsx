@@ -97,7 +97,7 @@ function App() {
     const [matchTicket, setMatchTicket] = useState<string | null>(null);
     const [gameState, setGameState] = useState<GameState | null>(null);
     const [history, setHistory] = useState<HistoryItem[]>([]);
-    const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
     const [account, setAccount] = useState<AccountState | null>(null);
     const [usernameInput, setUsernameInput] = useState('');
     const [displayNameInput, setDisplayNameInput] = useState('');
@@ -359,7 +359,7 @@ function App() {
         try {
             await client.rpc(session, 'clear_history', {});
             setHistory([]);
-            setSelectedHistory(null);
+            setSelectedHistoryId(null);
             showToast('History cleared.', 1500);
             haptic();
         } catch (error) {
@@ -550,6 +550,35 @@ function App() {
         return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
     };
 
+    const getHistoryId = (item: HistoryItem, index: number): string => `${item.at}-${item.opponentId}-${index}`;
+
+    const renderHistoryDetail = (item: HistoryItem) => (
+        <article className="history-detail inline-history-detail">
+            <div className="feed-head">
+                <h3>Match Detail</h3>
+                <button className="ghost" onClick={() => setSelectedHistoryId(null)}>Close</button>
+            </div>
+            <p className="muted">vs {item.opponentDisplayName || item.opponentUsername || 'Opponent'}</p>
+            <p className="muted">Played as {item.yourMark}</p>
+            {(item.moves || []).length > 0 ? (
+                <>
+                    <div className="mini-board">
+                        {buildBoardFromMoves(item.moves).map((cell, idx) => (
+                            <div key={idx} className={`mini-cell ${cell ? 'filled' : ''}`}>{cell || ''}</div>
+                        ))}
+                    </div>
+                    <ul className="move-list">
+                        {(item.moves || []).map((move, idx) => (
+                            <li key={`${move.position}-${idx}`}>#{idx + 1} {move.playerDisplayName} {'->'} {move.mark} on {move.position + 1}</li>
+                        ))}
+                    </ul>
+                </>
+            ) : (
+                <p className="muted replay-empty">Replay data not available for this match.</p>
+            )}
+        </article>
+    );
+
     const turnProgress = gameState
         ? Math.max(0, Math.min(100, (timerDisplaySec / gameState.turnDurationSec) * 100))
         : 0;
@@ -612,43 +641,25 @@ function App() {
                     ) : (
                         <ul className="history-list">
                             {history.map((item, index) => (
-                                <li key={`${item.at}-${index}`} onClick={() => setSelectedHistory(item)} className="history-item-clickable">
-                                    <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
-                                    <strong>{item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
-                                    <span className="muted">as {item.yourMark}</span>
-                                    <span className="muted">{formatHistoryDate(item.at)}</span>
+                                <li key={getHistoryId(item, index)} className="history-item-wrap">
+                                    <button
+                                        className="history-item-clickable history-row-button"
+                                        onClick={() => {
+                                            const nextId = getHistoryId(item, index);
+                                            setSelectedHistoryId(selectedHistoryId === nextId ? null : nextId);
+                                        }}
+                                    >
+                                        <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
+                                        <strong>{item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
+                                        <span className="muted">as {item.yourMark}</span>
+                                        <span className="muted">{formatHistoryDate(item.at)}</span>
+                                    </button>
+                                    {selectedHistoryId === getHistoryId(item, index) && renderHistoryDetail(item)}
                                 </li>
                             ))}
                         </ul>
                     )}
                 </article>
-
-                {selectedHistory && (
-                    <article className="history-detail">
-                        <div className="feed-head">
-                            <h3>Match Detail</h3>
-                            <button className="ghost" onClick={() => setSelectedHistory(null)}>Close</button>
-                        </div>
-                        <p className="muted">vs {selectedHistory.opponentDisplayName || selectedHistory.opponentUsername || 'Opponent'}</p>
-                        <p className="muted">Played as {selectedHistory.yourMark}</p>
-                        {(selectedHistory.moves || []).length > 0 ? (
-                            <>
-                                <div className="mini-board">
-                                    {buildBoardFromMoves(selectedHistory.moves).map((cell, idx) => (
-                                        <div key={idx} className={`mini-cell ${cell ? 'filled' : ''}`}>{cell || ''}</div>
-                                    ))}
-                                </div>
-                                <ul className="move-list">
-                                    {(selectedHistory.moves || []).map((move, idx) => (
-                                        <li key={`${move.position}-${idx}`}>#{idx + 1} {move.playerDisplayName} {'->'} {move.mark} on {move.position + 1}</li>
-                                    ))}
-                                </ul>
-                            </>
-                        ) : (
-                            <p className="muted replay-empty">Replay data not available for this match.</p>
-                        )}
-                    </article>
-                )}
             </section>
         </div>
     );
@@ -755,11 +766,20 @@ function App() {
                     ) : (
                         <ul className="history-list settings-history-list">
                             {history.map((item, index) => (
-                                <li key={`${item.at}-${index}`} onClick={() => setSelectedHistory(item)} className="history-item-clickable">
-                                    <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
-                                    <strong>{item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
-                                    <span className="muted">as {item.yourMark}</span>
-                                    <span className="muted">{formatHistoryDate(item.at)}</span>
+                                <li key={getHistoryId(item, index)} className="history-item-wrap">
+                                    <button
+                                        className="history-item-clickable history-row-button"
+                                        onClick={() => {
+                                            const nextId = getHistoryId(item, index);
+                                            setSelectedHistoryId(selectedHistoryId === nextId ? null : nextId);
+                                        }}
+                                    >
+                                        <span className={`pill result-${item.result}`}>{item.result.toUpperCase()}</span>
+                                        <strong>{item.opponentDisplayName || item.opponentUsername || 'Opponent'}</strong>
+                                        <span className="muted">as {item.yourMark}</span>
+                                        <span className="muted">{formatHistoryDate(item.at)}</span>
+                                    </button>
+                                    {selectedHistoryId === getHistoryId(item, index) && renderHistoryDetail(item)}
                                 </li>
                             ))}
                         </ul>
