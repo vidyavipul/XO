@@ -13,6 +13,9 @@
 
 * {
   box-sizing: border-box;
+}
+
+html {
   scroll-behavior: smooth;
 }
 
@@ -28,6 +31,7 @@ body {
     linear-gradient(150deg, var(--bg-base), var(--bg-mid));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
@@ -61,10 +65,11 @@ button {
   width: 390px;
   height: 390px;
   border-radius: 50%;
-  filter: blur(70px);
-  opacity: 0.45;
+  filter: blur(42px);
+  opacity: 0.26;
   z-index: 0;
-  animation: float 13s ease-in-out infinite;
+  animation: none;
+  will-change: auto;
 }
 
 .orb-a {
@@ -83,9 +88,9 @@ button {
 .noise-layer {
   position: absolute;
   inset: 0;
-  opacity: 0.025;
+  opacity: 0.012;
   background-image: radial-gradient(white 0.45px, transparent 0.45px);
-  background-size: 3px 3px;
+  background-size: 4px 4px;
   z-index: 1;
   pointer-events: none;
 }
@@ -293,23 +298,8 @@ label {
   padding: 0;
   display: grid;
   gap: 0.45rem;
-  max-height: 280px;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.history-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.history-list::-webkit-scrollbar-thumb {
-  background: rgba(124, 183, 227, 0.35);
-  border-radius: 999px;
-}
-
-.history-list::-webkit-scrollbar-track {
-  background: rgba(14, 28, 42, 0.35);
-  border-radius: 999px;
+  max-height: none;
+  overflow: visible;
 }
 
 .history-list li {
@@ -365,12 +355,12 @@ label {
 }
 
 .history-detail {
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: 0 16px 35px rgba(3, 10, 17, 0.35);
-  backdrop-filter: blur(8px);
-  padding: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(170, 220, 255, 0.14);
+  background: rgba(12, 24, 37, 0.44);
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 0.8rem;
 }
 
 .history-detail h3 {
@@ -410,24 +400,8 @@ label {
   font-size: 0.88rem;
   display: grid;
   gap: 0.2rem;
-  max-height: 190px;
-  overflow: auto;
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
-}
-
-.move-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.move-list::-webkit-scrollbar-thumb {
-  background: rgba(124, 183, 227, 0.35);
-  border-radius: 999px;
-}
-
-.move-list::-webkit-scrollbar-track {
-  background: rgba(14, 28, 42, 0.35);
-  border-radius: 999px;
+  max-height: none;
+  overflow: visible;
 }
 
 .replay-empty {
@@ -475,8 +449,8 @@ label {
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--panel);
-  box-shadow: 0 16px 35px rgba(3, 10, 17, 0.35);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 22px rgba(3, 10, 17, 0.28);
+  backdrop-filter: none;
 }
 
 .settings-header {
@@ -496,7 +470,7 @@ label {
 
 .settings-history-list {
   margin-top: 0.75rem;
-  max-height: 340px;
+  max-height: none;
 }
 
 .settings-tabs {
