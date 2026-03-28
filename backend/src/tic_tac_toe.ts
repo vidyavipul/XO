@@ -130,7 +130,12 @@ const matchJoin: nkruntime.MatchJoinFunction<State> = (ctx, logger, nk, dispatch
 };
 
 const matchLeave: nkruntime.MatchLeaveFunction<State> = (ctx, logger, nk, dispatcher, tick, state, presences) => {
+    const hadTwoPlayers = state.playerOrder.length === 2;
+    const leavingIds: string[] = [];
+    const leavingNames: { [userID: string]: string } = {};
     presences.forEach(p => {
+        leavingIds.push(p.userId);
+        leavingNames[p.userId] = state.usernames[p.userId] || p.username || p.userId.slice(0, 8);
         delete state.presences[p.userId];
         delete state.usernames[p.userId];
         delete state.marks[p.userId];
@@ -142,13 +147,28 @@ const matchLeave: nkruntime.MatchLeaveFunction<State> = (ctx, logger, nk, dispat
         return null;
     }
 
+    // If one player leaves during an active round, count it as a forfeit win for the remaining player.
+    if (hadTwoPlayers && state.playerOrder.length === 1 && !state.winner && state.round > 0) {
+        const remainingPlayer = state.playerOrder[0];
+        const leftPlayer = leavingIds.length > 0 ? leavingIds[0] : '';
+        const leftPlayerName = leavingNames[leftPlayer] || (leftPlayer ? leftPlayer.slice(0, 8) : 'Opponent');
+        if (remainingPlayer) {
+            state.winner = remainingPlayer;
+            state.turn = null;
+            state.turnDeadlineTick = 0;
+            state.statusMessage = `${leftPlayerName} forfeited, you get a win.`;
+            updateHeadToHeadOnResult(state, remainingPlayer);
+            persistResult(state, nk, logger);
+        }
+    }
+
     if (state.playerOrder.length < 2) {
         state.turn = null;
-        state.winner = null;
         state.turnDeadlineTick = 0;
-        state.statusMessage = 'Opponent left. Waiting for a new player...';
+        state.statusMessage = state.statusMessage || 'Opponent left. Returning to home...';
         state.rematchVotes = {};
         state.board = Array(9).fill(null);
+        state.moveLog = [];
     }
 
     syncPlayerOrderAndMarks(state);
@@ -464,7 +484,7 @@ function persistResult(state: State, nk: nkruntime.Nakama, logger: nkruntime.Log
                 yourMark: (state.marks[userA] as 'X' | 'O') || 'X',
                 opponentId: userB,
                 opponentDisplayName: getUsername(state, userB),
-                moves: state.moveLog
+                moves: cloneMoves(state.moveLog)
             }
         );
 
@@ -476,7 +496,7 @@ function persistResult(state: State, nk: nkruntime.Nakama, logger: nkruntime.Log
                 yourMark: (state.marks[userB] as 'X' | 'O') || 'O',
                 opponentId: userA,
                 opponentDisplayName: getUsername(state, userA),
-                moves: state.moveLog
+                moves: cloneMoves(state.moveLog)
             }
         );
 
@@ -547,4 +567,12 @@ function buildNextHistory(existing: HistoryValue, newEntry: HistoryItem): Histor
         games: nextGames,
         updatedAt: Date.now()
     };
+}
+
+function cloneMoves(moves: MatchMove[]): MatchMove[] {
+    return (moves || []).map(move => ({
+        position: Number(move.position),
+        mark: move.mark,
+        playerDisplayName: move.playerDisplayName
+    }));
 }

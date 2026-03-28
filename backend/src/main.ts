@@ -1,6 +1,31 @@
 /// <reference path="../node_modules/nakama-runtime/index.d.ts" />
 // main.ts
 
+const RPC_HISTORY_COLLECTION = 'ttt_history';
+const RPC_HISTORY_KEY = 'recent';
+
+const rpcClearHistory: nkruntime.RpcFunction = (ctx, logger, nk, payload) => {
+    if (!ctx.userId) {
+        throw Error('User not authenticated');
+    }
+
+    nk.storageWrite([
+        {
+            collection: RPC_HISTORY_COLLECTION,
+            key: RPC_HISTORY_KEY,
+            userId: ctx.userId,
+            permissionRead: 1,
+            permissionWrite: 0,
+            value: {
+                games: [],
+                updatedAt: Date.now()
+            }
+        }
+    ]);
+
+    return JSON.stringify({ ok: true });
+};
+
 function matchmakerMatched(
     context: nkruntime.Context,
     logger: nkruntime.Logger,
@@ -29,7 +54,10 @@ const InitModule: nkruntime.InitModule =
     // When the matchmaker finds enough players, this hook is triggered.
     initializer.registerMatchmakerMatched(matchmakerMatched);
 
-    logger.info('XO module loaded, match and matchmaker registered.');
+    // 3. User-scoped history reset. Keeps object in database but clears this user's games array.
+    initializer.registerRpc('clear_history', rpcClearHistory);
+
+    logger.info('XO module loaded, match, matchmaker, and clear_history RPC registered.');
 }
 
 // Global variable that Nakama looks for
