@@ -21,8 +21,10 @@ Fast-paced multiplayer XO with a server-authoritative Nakama backend, modern Rea
 - Persistent head-to-head counters
 - Persistent recent match history
 - Match replay list with move-by-move trail
+- Match detail expands inline below each selected recent match
 - Settings page with profile + history tabs
 - User-scoped clear history action
+- Post-round opponent leave does not award bonus points
 
 ## System
 
@@ -102,3 +104,45 @@ cd ../frontend && npm run build
 - Backend runtime source is in `backend/src`
 - Runtime output is loaded into Nakama from `backend/build/main.js`
 - Backend logic is server authoritative (client is not trusted for outcomes)
+
+## Free Hosting (Public Link + Global Play)
+
+To let anyone play from anywhere with a shareable link, use this free-tier setup:
+
+1. Frontend on Cloudflare Pages (free)
+2. Nakama backend on Fly.io (free credits/trial)
+3. Postgres on Neon free tier (Nakama-compatible)
+
+### Deploy Plan
+
+1) Deploy Database (Neon)
+- Create a Neon Postgres project
+- Copy the connection string
+- Ensure SSL mode is enabled
+
+2) Deploy Nakama (Fly.io)
+- Create a Fly app from this repository
+- Use your Nakama Docker setup
+- Set environment variables:
+      - database address (Neon URL)
+      - socket server key
+      - runtime http key
+      - console username/password
+- Expose ports 7350 (API) and 7349 if needed
+
+3) Deploy Frontend (Cloudflare Pages)
+- Build command: `npm run build`
+- Output dir: `dist`
+- Set API host env to your Fly Nakama URL
+
+4) CORS and host config
+- In Nakama config, allow your frontend domain
+- In frontend, point client host to deployed Nakama endpoint
+
+### Matchmaking Across Regions
+
+- Any two users with the frontend link can match as long as both hit the same Nakama deployment.
+- For smooth global play:
+      - keep Nakama in a central region with low average latency for your audience
+      - upgrade to multi-region later if needed (paid tier)
+
