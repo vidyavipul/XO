@@ -162,6 +162,13 @@ const matchLeave: nkruntime.MatchLeaveFunction<State> = (ctx, logger, nk, dispat
         }
     }
 
+    // If someone leaves after a round is already over, do not award points.
+    if (hadTwoPlayers && state.playerOrder.length === 1 && !!state.winner) {
+        const leftPlayer = leavingIds.length > 0 ? leavingIds[0] : '';
+        const leftPlayerName = leavingNames[leftPlayer] || (leftPlayer ? leftPlayer.slice(0, 8) : 'Opponent');
+        state.statusMessage = `${leftPlayerName} left the match. Find a new opponent or go home.`;
+    }
+
     if (state.playerOrder.length < 2) {
         state.turn = null;
         state.turnDeadlineTick = 0;
